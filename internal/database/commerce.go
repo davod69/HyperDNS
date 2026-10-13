@@ -101,6 +101,7 @@ type SalesOrder struct {
 	CustomerID     string    `json:"customer_id"`
 	PlanID         string    `json:"plan_id"`
 	PlanName       string    `json:"plan_name"`
+	PlanSnapshot   SalesPlan `json:"plan_snapshot"`
 	AmountMinor    int64     `json:"amount_minor"`
 	Currency       string    `json:"currency"`
 	Status         string    `json:"status"`
@@ -552,7 +553,8 @@ func (db *DB) SaveSalesOrder(o SalesOrder) (SalesOrder, error) {
 		if orders == nil || idem == nil || byCustomer == nil { return errors.New("sales order buckets are missing") }
 		var customer CommerceCustomer
 		found, err := readCommercialTx(db, tx, bucketSalesCustomers, o.CustomerID, &customer)
-		if err != nil { return err }; if !found { return ErrCommerceForeignKey }
+		if err != nil { return err }
+		if !found || customer.Disabled { return fmt.Errorf("%w: customer does not exist or is disabled", ErrCommerceForeignKey) }
 		var plan SalesPlan
 		found, err = readCommercialTx(db, tx, bucketSalesPlans, o.PlanID, &plan)
 		if err != nil { return err }; if !found { return ErrCommerceForeignKey }
@@ -565,6 +567,16 @@ func (db *DB) SaveSalesOrder(o SalesOrder) (SalesOrder, error) {
 			}
 			if !canTransitionOrder(old.Status, o.Status) { return ErrCommerceTransition }
 			o.CreatedAt = old.CreatedAt
+			if old.PlanSnapshot.ID == "" { o.PlanSnapshot = plan } else { o.PlanSnapshot = old.PlanSnapshot }
+		} else {
+			if !plan.Active { return fmt.Errorf("%w: plan is not available for purchase", ErrCommerceInvalidRecord) }
+			if o.AmountMinor != plan.PriceMinor || o.Currency != plan.Currency || o.PlanName != plan.Name {
+				return fmt.Errorf("%w: order price, currency and name must match the current plan", ErrCommerceInvalidRecord)
+			}
+			o.PlanSnapshot = plan
+		}
+		if o.PlanSnapshot.ID != o.PlanID || o.PlanSnapshot.PriceMinor != o.AmountMinor || o.PlanSnapshot.Currency != o.Currency || o.PlanSnapshot.Name != o.PlanName {
+			return fmt.Errorf("%w: plan snapshot does not match immutable order terms", ErrCommerceInvalidRecord)
 		}
 		if idemKey != "" {
 			if owner := idem.Get([]byte(idemKey)); owner != nil && string(owner) != o.ID { return ErrCommerceIdempotencyKey }
@@ -688,12 +700,7 @@ func (db *DB) SaveCustomerSubscription(s CustomerSubscription) (CustomerSubscrip
 	if s.Status == "" { s.Status = CustomerSubscriptionPending }
 	if !validCustomerSubscriptionStatus(s.Status) { return s, fmt.Errorf("%w: unknown subscription status", ErrCommerceInvalidRecord) }
 	if s.Status == CustomerSubscriptionActive && s.ClientID == "" { return s, fmt.Errorf("%w: an active subscription must reference a DNS Client", ErrCommerceInvalidRecord) }
-	if s.PlanSnapshot.ID == "" {
-		p, err := db.GetSalesPlan(s.PlanID); if err != nil { return s, fmt.Errorf("%w: plan snapshot: %v", ErrCommerceForeignKey, err) }
-		s.PlanSnapshot = *p
-	}
-	if s.PlanSnapshot.ID != s.PlanID { return s, fmt.Errorf("%w: plan snapshot does not match plan ID", ErrCommerceInvalidRecord) }
-	if err := validateSalesPlan(&s.PlanSnapshot); err != nil { return s, err }
+	if s.PlanSnapshot.ID != "" && s.PlanSnapshot.ID != s.PlanID { return s, fmt.Errorf("%w: plan snapshot does not match plan ID", ErrCommerceInvalidRecord) }
 	now := time.Now().UTC()
 	if s.CreatedAt.IsZero() { s.CreatedAt = now }
 	if s.Status == CustomerSubscriptionActive && s.StartedAt.IsZero() { s.StartedAt = now }
@@ -711,7 +718,10 @@ func (db *DB) SaveCustomerSubscription(s CustomerSubscription) (CustomerSubscrip
 		var order SalesOrder
 		found, err = readCommercialTx(db, tx, bucketSalesOrders, s.OrderID, &order)
 		if err != nil { return err }
-		if !found || order.CustomerID != s.CustomerID || order.PlanID != s.PlanID || order.Status != SalesOrderPaid { return ErrCommerceForeignKey }
+		if !found || order.CustomerID != s.CustomerID || order.PlanID != s.PlanID || order.Status != SalesOrderPaid || order.PlanSnapshot.ID != s.PlanID { return ErrCommerceForeignKey }
+		// The paid order is authoritative for the benefits purchased by this customer.
+		s.PlanSnapshot = order.PlanSnapshot
+		if err := validateSalesPlan(&s.PlanSnapshot); err != nil { return err }
 		if s.ClientID != "" && (tx.Bucket(bucketClients) == nil || tx.Bucket(bucketClients).Get([]byte(s.ClientID)) == nil) {
 			return fmt.Errorf("%w: DNS Client %q does not exist", ErrCommerceForeignKey, s.ClientID)
 		}
@@ -793,7 +803,7 @@ func (db *DB) ValidateCommercialState() error {
 				email, err := normaliseCommerceEmail(c.Email)
 				if err != nil || email != c.Email || c.ID != string(k) || c.PasswordHash == "" { return fmt.Errorf("validate sales customer %q: invalid identity record", k) }
 				idx := tx.Bucket(bucketSalesCustomerEmail)
-				if idx == nil || string(idx.Get([]byte(db.cipher.BlindIndex("sales-email:"+c.Email))) != c.ID { return fmt.Errorf("validate sales customer %q: email index mismatch", k) }
+				if idx == nil || string(idx.Get([]byte(db.cipher.BlindIndex("sales-email:"+c.Email)))) != c.ID { return fmt.Errorf("validate sales customer %q: email index mismatch", k) }
 				if c.TelegramUserID > 0 {
 					tg := tx.Bucket(bucketSalesCustomerTelegram)
 					if tg == nil || string(tg.Get([]byte(strconv.FormatInt(c.TelegramUserID, 10)))) != c.ID { return fmt.Errorf("validate sales customer %q: Telegram index mismatch", k) }
@@ -815,7 +825,12 @@ func (db *DB) ValidateCommercialState() error {
 			if err := orders.ForEach(func(k, raw []byte) error {
 				var o SalesOrder
 				if err := db.openCommercialRecord(raw, &o); err != nil { return fmt.Errorf("validate sales order %q: %w", k, err) }
-				if o.ID != string(k) || o.CustomerID == "" || o.PlanID == "" || o.PlanName == "" || o.AmountMinor < 0 || !validOrderStatus(o.Status) { return fmt.Errorf("validate sales order %q: invalid record", k) }
+				if o.ID != string(k) || o.CustomerID == "" || o.PlanID == "" || o.PlanName == "" || o.AmountMinor < 0 || !validOrderStatus(o.Status) ||
+					o.PlanSnapshot.ID != o.PlanID || o.PlanSnapshot.Name != o.PlanName || o.PlanSnapshot.PriceMinor != o.AmountMinor || o.PlanSnapshot.Currency != o.Currency {
+					return fmt.Errorf("validate sales order %q: invalid record or plan snapshot", k)
+				}
+				snapshot := o.PlanSnapshot
+				if err := validateSalesPlan(&snapshot); err != nil { return fmt.Errorf("validate sales order %q: invalid plan snapshot: %w", k, err) }
 				var c CommerceCustomer
 				found, err := readCommercialTx(db, tx, bucketSalesCustomers, o.CustomerID, &c)
 				if err != nil || !found { return fmt.Errorf("validate sales order %q: customer reference is invalid", k) }
@@ -828,7 +843,7 @@ func (db *DB) ValidateCommercialState() error {
 					if idx == nil || string(idx.Get([]byte(expected))) != o.ID { return fmt.Errorf("validate sales order %q: idempotency index mismatch", k) }
 				}
 				idx := tx.Bucket(bucketSalesOrderCustomer)
-				if idx == nil || string(idx.Get([]byte(o.CustomerID+":"+o.ID)) != o.ID { return fmt.Errorf("validate sales order %q: customer index mismatch", k) }
+				if idx == nil || string(idx.Get([]byte(o.CustomerID+":"+o.ID))) != o.ID { return fmt.Errorf("validate sales order %q: customer index mismatch", k) }
 				return nil
 			}); err != nil { return err }
 		}
@@ -862,7 +877,7 @@ func (db *DB) ValidateCommercialState() error {
 				found, err = readCommercialTx(db, tx, bucketSalesOrders, s.OrderID, &o)
 				if err != nil || !found || o.CustomerID != s.CustomerID || o.PlanID != s.PlanID || (s.Status != CustomerSubscriptionCancelled && o.Status != SalesOrderPaid) { return fmt.Errorf("validate subscription %q: order reference is invalid", k) }
 				idx := tx.Bucket(bucketSalesSubscriptionCustomer)
-				if idx == nil || string(idx.Get([]byte(s.CustomerID+":"+s.ID)) != s.ID { return fmt.Errorf("validate subscription %q: customer index mismatch", k) }
+				if idx == nil || string(idx.Get([]byte(s.CustomerID+":"+s.ID))) != s.ID { return fmt.Errorf("validate subscription %q: customer index mismatch", k) }
 				if s.ClientID != "" && (tx.Bucket(bucketClients) == nil || tx.Bucket(bucketClients).Get([]byte(s.ClientID)) == nil) { return fmt.Errorf("validate subscription %q: DNS Client reference is invalid", k) }
 				return nil
 			}); err != nil { return err }
