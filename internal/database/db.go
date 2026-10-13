@@ -30,7 +30,7 @@ var (
 // daemon does not make; they are dropped rather than carried forward and audited
 // again at every release.
 var (
-	bucketsInUse   = [][]byte{bucketClients, bucketPolicies, bucketSettings}
+	bucketsInUse   = [][]byte{bucketClients, bucketPolicies, bucketSettings, bucketSalesCustomers, bucketSalesCustomerEmail, bucketSalesCustomerTelegram, bucketSalesPlans, bucketSalesOrders, bucketSalesOrderIdempotency, bucketSalesOrderCustomer, bucketSalesPayments, bucketSalesPaymentReference, bucketSalesSubscriptions, bucketSalesSubscriptionCustomer, bucketSalesAuditEvents}
 	bucketsRetired = [][]byte{bucketLogs, bucketUpstreams}
 )
 
@@ -211,7 +211,10 @@ func (db *DB) validateStoredState() error {
 	if err := db.ValidateSettings(); err != nil {
 		return err
 	}
-	return db.ValidateClients()
+	if err := db.ValidateClients(); err != nil {
+		return err
+	}
+	return db.ValidateCommercialState()
 }
 
 // compactDatabase rewrites the database file and returns a handle to the
