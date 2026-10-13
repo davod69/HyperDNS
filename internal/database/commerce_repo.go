@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	cryptoutil "hyperdns/internal/crypto"
+
 	"github.com/google/uuid"
 	bolt "go.etcd.io/bbolt"
 )
@@ -61,7 +63,7 @@ func (r *CommerceRepository) ensureSchema() error {
 			version, err := strconv.ParseUint(string(rawVersion), 10, 64)
 			if err != nil || version > latestCommerceSchemaVersion {
 				return fmt.Errorf("%w: found version %q, this binary supports up to %d",
-					ErrCommerceSchemaMissing, string(rawVersion), latestCommerceSchemaVersion)
+					ErrCommerceSchemaUnsupported, string(rawVersion), latestCommerceSchemaVersion)
 			}
 		}
 
@@ -108,8 +110,8 @@ func (r *CommerceRepository) CreateCustomer(customer CommerceCustomer, passwordH
 	if err != nil {
 		return CommerceCustomer{}, err
 	}
-	if strings.TrimSpace(passwordHash) == "" {
-		return CommerceCustomer{}, fmt.Errorf("%w: password hash is required", ErrCommerceInvalidRecord)
+	if !cryptoutil.IsPasswordHash(passwordHash) {
+		return CommerceCustomer{}, fmt.Errorf("%w: passwordHash must be a supported one-way password verifier", ErrCommerceInvalidRecord)
 	}
 	customer.ID = strings.TrimSpace(customer.ID)
 	if customer.ID == "" {

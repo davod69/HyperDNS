@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	cryptoutil "hyperdns/internal/crypto"
+
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -40,12 +42,21 @@ func commerceTestPlan() CommercePlan {
 	}
 }
 
+func testCommercePasswordHash(t *testing.T, seed string) string {
+	t.Helper()
+	hash, err := cryptoutil.HashPasswordWithCost("Strong Test Password! "+seed, 1)
+	if err != nil {
+		t.Fatalf("HashPasswordWithCost: %v", err)
+	}
+	return hash
+}
+
 func commerceTestCustomer(t *testing.T, repo *CommerceRepository) CommerceCustomer {
 	t.Helper()
 	customer, err := repo.CreateCustomer(CommerceCustomer{
 		Email:       "Sales.Test+One@example.com",
 		DisplayName: "Test Customer",
-	}, "$argon2id$v=19$m=65536,t=3,p=1$test$testencodedhash")
+	}, testCommercePasswordHash(t, t.Name()))
 	if err != nil {
 		t.Fatalf("CreateCustomer: %v", err)
 	}
@@ -92,7 +103,7 @@ func TestCommerceCustomerEmailEncryptedAndIndexed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := repo.CreateCustomer(CommerceCustomer{Email: "sales.test+one@example.com"}, "$argon2id$v=19$m=65536,t=3,p=1$test$anotherhash"); !errors.Is(err, ErrCommerceEmailExists) {
+	if _, err := repo.CreateCustomer(CommerceCustomer{Email: "sales.test+one@example.com"}, testCommercePasswordHash(t, "duplicate")); !errors.Is(err, ErrCommerceEmailExists) {
 		t.Fatalf("duplicate email error = %v", err)
 	}
 }
@@ -252,7 +263,7 @@ func TestCommerceCustomerAndOrderIsolation(t *testing.T) {
 	two, err := repo.CreateCustomer(CommerceCustomer{
 		Email:       "other@example.org",
 		DisplayName: "Other Customer",
-	}, "$argon2id$v=19$m=65536,t=3,p=1$test$anotherencodedhash")
+	}, testCommercePasswordHash(t, "other-customer"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,8 +324,7 @@ func TestCommerceSchemaVersionIsRecordedAndChecked(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	_ = repo
-
+	
 	// Opening another repository instance against a database from the current
 	// schema is idempotent and leaves the version and buckets intact.
 	reopened, err := NewCommerceRepository(db)
