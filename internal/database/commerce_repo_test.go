@@ -298,3 +298,64 @@ func TestCommerceRepositoryRequiresOpenEncryptedDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCommerceSchemaVersionIsRecordedAndChecked(t *testing.T) {
+	db, repo := commerceFixture(t)
+	if err := db.bolt.View(func(tx *bolt.Tx) error {
+		root := tx.Bucket(bucketCommerceRoot)
+		if root == nil {
+			t.Fatal("commerce root bucket missing")
+		}
+		if got := string(root.Get(commerceSchemaVersionKey)); got != "1" {
+			t.Fatalf("schema version = %q, want 1", got)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_ = repo
+
+	// Opening another repository instance against a database from the current
+	// schema is idempotent and leaves the version and buckets intact.
+	reopened, err := NewCommerceRepository(db)
+	if err != nil || reopened == nil {
+		t.Fatalf("reopen current schema: repo=%v err=%v", reopened, err)
+	}
+}
+
+func TestCommerceSchemaRefusesFutureVersionWithoutAddingBuckets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "future.db")
+	db, err := Create(path, testCipher(t, 0x7c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.bolt.Update(func(tx *bolt.Tx) error {
+		root, err := tx.CreateBucketIfNotExists(bucketCommerceRoot)
+		if err != nil {
+			return err
+		}
+		if err := root.Put(commerceSchemaVersionKey, []byte("999")); err != nil {
+			return err
+		}
+		_, err = root.CreateBucketIfNotExists(bucketCommercePlans)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewCommerceRepository(db); err == nil {
+		t.Fatal("future schema version must be refused")
+	}
+	if err := db.bolt.View(func(tx *bolt.Tx) error {
+		root := tx.Bucket(bucketCommerceRoot)
+		if got := string(root.Get(commerceSchemaVersionKey)); got != "999" {
+			t.Fatalf("future schema version was overwritten: %q", got)
+		}
+		if root.Bucket(bucketCommerceCustomers) != nil {
+			t.Fatal("future schema refusal still created customer buckets")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

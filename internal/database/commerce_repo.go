@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,7 +13,10 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
+const latestCommerceSchemaVersion uint64 = 1
+
 var (
+	commerceSchemaVersionKey     = []byte("schema_version")
 	bucketCommerceRoot          = []byte("commerce")
 	bucketCommerceCustomers     = []byte("customers")
 	bucketCommerceCustomerEmail = []byte("customer_email_index")
@@ -50,6 +54,17 @@ func (r *CommerceRepository) ensureSchema() error {
 		if err != nil {
 			return fmt.Errorf("create commerce bucket: %w", err)
 		}
+
+		// Refuse a database written by a newer commerce build instead of guessing
+		// at its record shapes or performing a downgrade migration.
+		if rawVersion := root.Get(commerceSchemaVersionKey); rawVersion != nil {
+			version, err := strconv.ParseUint(string(rawVersion), 10, 64)
+			if err != nil || version > latestCommerceSchemaVersion {
+				return fmt.Errorf("%w: found version %q, this binary supports up to %d",
+					ErrCommerceSchemaMissing, string(rawVersion), latestCommerceSchemaVersion)
+			}
+		}
+
 		for _, name := range [][]byte{
 			bucketCommerceCustomers,
 			bucketCommerceCustomerEmail,
@@ -62,6 +77,9 @@ func (r *CommerceRepository) ensureSchema() error {
 			if _, err := root.CreateBucketIfNotExists(name); err != nil {
 				return fmt.Errorf("create commerce sub-bucket %q: %w", name, err)
 			}
+		}
+		if err := root.Put(commerceSchemaVersionKey, []byte(strconv.FormatUint(latestCommerceSchemaVersion, 10))); err != nil {
+			return fmt.Errorf("persist commerce schema version: %w", err)
 		}
 		return nil
 	})
