@@ -78,10 +78,18 @@ func TestCommerceAPIRegisterLoginAndMe(t *testing.T) {
 	if duplicate.Code != http.StatusConflict {
 		t.Fatalf("duplicate status = %d, body=%s", duplicate.Code, duplicate.Body.String())
 	}
+	failedLogin := requestCommerce(api, http.MethodPost, "/api/v2/store/auth/login",
+		`{"email":"BUYER@example.com","password":"wrong-password"}`, nil, "")
+	if failedLogin.Code != http.StatusUnauthorized || api.limiter.Count() != 1 {
+		t.Fatalf("failed login status/count = %d/%d", failedLogin.Code, api.limiter.Count())
+	}
 	login := requestCommerce(api, http.MethodPost, "/api/v2/store/auth/login",
 		`{"email":"BUYER@example.com","password":"Str0ng-unique-password-2026"}`, nil, "")
 	if login.Code != http.StatusOK {
 		t.Fatalf("login status = %d, body=%s", login.Code, login.Body.String())
+	}
+	if api.limiter.Count() != 0 {
+		t.Fatalf("successful login did not clear failed attempts: count=%d", api.limiter.Count())
 	}
 	var sessionCookie, csrfCookie *http.Cookie
 	for _, cookie := range login.Result().Cookies() {

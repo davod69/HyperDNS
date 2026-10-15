@@ -208,10 +208,10 @@ func (api *commerceAPI) login(w http.ResponseWriter, r *http.Request) {
 	}
 	customer, token, err := api.service.Login(req.Email, req.Password)
 	if err != nil {
-		if api.limiter != nil {
-			api.limiter.RecordFailure(ip)
-		}
 		if errors.Is(err, commerce.ErrInvalidCredentials) {
+			if api.limiter != nil {
+				api.limiter.RecordFailure(ip)
+			}
 			writeCommerceError(w, http.StatusUnauthorized, "invalid_credentials", "Email or password is incorrect.")
 			return
 		}
