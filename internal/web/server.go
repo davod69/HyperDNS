@@ -62,8 +62,8 @@ type WebServer struct {
 	commerce        *commerce.Service
 	commerceLimiter *service.LoginAttemptTracker
 	loginLimiter    *service.LoginAttemptTracker
-	benchmark     *service.BenchmarkRunner
-	sseTickets    *sseTicketStore
+	benchmark       *service.BenchmarkRunner
+	sseTickets      *sseTicketStore
 
 	// ldapAuth is the directory client used when the auth record points at
 	// LDAP. It is an interface so tests can inject a fake without a network.
