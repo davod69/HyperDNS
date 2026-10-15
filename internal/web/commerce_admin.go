@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -33,7 +34,7 @@ func (ws *WebServer) handleCommercePlans(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		var extra any
-		if err := dec.Decode(&extra); err == nil {
+		if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 			http.Error(w, "expected one JSON object", http.StatusBadRequest)
 			return
 		}
