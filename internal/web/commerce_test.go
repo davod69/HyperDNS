@@ -80,7 +80,7 @@ func TestCommerceAPIRegisterLoginAndMe(t *testing.T) {
 	}
 	failedLogin := requestCommerce(api, http.MethodPost, "/api/v2/store/auth/login",
 		`{"email":"BUYER@example.com","password":"wrong-password"}`, nil, "")
-	if failedLogin.Code != http.StatusUnauthorized || api.limiter.Count() != 1 {
+	if failedLogin.Code != http.StatusUnauthorized || api.limiter.Count() != 2 {
 		t.Fatalf("failed login status/count = %d/%d", failedLogin.Code, api.limiter.Count())
 	}
 	login := requestCommerce(api, http.MethodPost, "/api/v2/store/auth/login",

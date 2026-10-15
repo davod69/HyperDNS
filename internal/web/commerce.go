@@ -26,6 +26,7 @@ const (
 type commerceAPI struct {
 	service *commerce.Service
 	limiter *service.LoginAttemptTracker
+	kdfGate chan struct{}
 	secure  bool
 }
 
@@ -77,7 +78,8 @@ func (ws *WebServer) commerceHandler() http.Handler {
 	api := &commerceAPI{
 		service: ws.commerce,
 		limiter: ws.commerceLimiter,
-		secure:  ws.panelHTTPS(),
+		kdfGate: ws.kdfGate,
+		secure:  ws.subscriberHTTPS(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v2/store/auth/register", api.register)
@@ -166,6 +168,11 @@ func (api *commerceAPI) register(w http.ResponseWriter, r *http.Request) {
 	if !api.method(w, r, http.MethodPost) || !api.ready(w) {
 		return
 	}
+	ip := netutil.ClientIP(r)
+	if api.limiter != nil && api.limiter.IsBlocked(ip) {
+		writeCommerceError(w, http.StatusTooManyRequests, "rate_limited", "Too many failed authentication attempts. Try again later.")
+		return
+	}
 	var req struct {
 		Email       string `json:"email"`
 		Password    string `json:"password"`
@@ -174,18 +181,33 @@ func (api *commerceAPI) register(w http.ResponseWriter, r *http.Request) {
 	if !decodeCommerceJSON(w, r, &req) {
 		return
 	}
-	customer, err := api.service.Register(req.Email, req.Password, req.DisplayName)
-	if err != nil {
-		if errors.Is(err, database.ErrCommerceEmailExists) {
-			writeCommerceError(w, http.StatusConflict, "email_exists", "An account with this email already exists.")
+	if api.kdfGate != nil {
+		select {
+		case api.kdfGate <- struct{}{}:
+			defer func() { <-api.kdfGate }()
+		default:
+			writeCommerceError(w, http.StatusTooManyRequests, "authentication_busy", "Authentication is busy. Try again shortly.")
 			return
 		}
-		if errors.Is(err, database.ErrCommerceInvalidRecord) {
+	}
+	customer, err := api.service.Register(req.Email, req.Password, req.DisplayName)
+	if err != nil {
+		if errors.Is(err, database.ErrCommerceEmailExists) || errors.Is(err, database.ErrCommerceInvalidRecord) {
+			if api.limiter != nil {
+				api.limiter.RecordFailure(ip)
+			}
+			if errors.Is(err, database.ErrCommerceEmailExists) {
+				writeCommerceError(w, http.StatusConflict, "email_exists", "An account with this email already exists.")
+				return
+			}
 			writeCommerceError(w, http.StatusBadRequest, "invalid_request", "The email, password, or display name does not meet the requirements.")
 			return
 		}
 		writeCommerceError(w, http.StatusInternalServerError, "internal_error", "The request could not be completed.")
 		return
+	}
+	if api.limiter != nil {
+		api.limiter.RecordSuccess(ip)
 	}
 	writeCommerceJSON(w, http.StatusCreated, map[string]any{"customer": customer})
 }
@@ -205,6 +227,15 @@ func (api *commerceAPI) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if !decodeCommerceJSON(w, r, &req) {
 		return
+	}
+	if api.kdfGate != nil {
+		select {
+		case api.kdfGate <- struct{}{}:
+			defer func() { <-api.kdfGate }()
+		default:
+			writeCommerceError(w, http.StatusTooManyRequests, "authentication_busy", "Authentication is busy. Try again shortly.")
+			return
+		}
 	}
 	customer, token, err := api.service.Login(req.Email, req.Password)
 	if err != nil {
