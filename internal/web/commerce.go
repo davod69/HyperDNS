@@ -233,8 +233,7 @@ func (api *commerceAPI) logout(w http.ResponseWriter, r *http.Request) {
 	if !api.method(w, r, http.MethodPost) {
 		return
 	}
-	customer, token, ok := api.requireCustomer(w, r)
-	_ = customer
+	_, token, ok := api.requireCustomer(w, r)
 	if !ok {
 		return
 	}
@@ -243,7 +242,7 @@ func (api *commerceAPI) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.service.Logout(token)
-	api.clearSession(w)
+	api.clearSession(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
