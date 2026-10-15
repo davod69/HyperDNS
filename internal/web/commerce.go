@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"hyperdns/internal/commerce"
-	"hyperdns/internal/crypto"
 	"hyperdns/internal/database"
 	"hyperdns/internal/netutil"
 	"hyperdns/internal/service"
@@ -109,11 +108,11 @@ func (api *commerceAPI) method(w http.ResponseWriter, r *http.Request, method st
 	return true
 }
 
-func (api *commerceAPI) setSession(w http.ResponseWriter, token string) {
+func (api *commerceAPI) setSession(w http.ResponseWriter, token string) bool {
 	csrfBytes := make([]byte, 32)
 	if _, err := rand.Read(csrfBytes); err != nil {
 		writeCommerceError(w, http.StatusInternalServerError, "internal_error", "The request could not be completed.")
-		return
+		return false
 	}
 	csrf := hex.EncodeToString(csrfBytes)
 	http.SetCookie(w, &http.Cookie{
@@ -124,6 +123,7 @@ func (api *commerceAPI) setSession(w http.ResponseWriter, token string) {
 		Name: commerceCSRFCookie, Value: csrf, Path: "/", HttpOnly: false,
 		Secure: api.secure, SameSite: http.SameSiteStrictMode, MaxAge: 24 * 60 * 60,
 	})
+	return true
 }
 
 func (api *commerceAPI) clearSession(w http.ResponseWriter) {
@@ -222,7 +222,10 @@ func (api *commerceAPI) login(w http.ResponseWriter, r *http.Request) {
 	if api.limiter != nil {
 		api.limiter.RecordSuccess(ip)
 	}
-	api.setSession(w, token)
+	if !api.setSession(w, token) {
+		api.service.Logout(token)
+		return
+	}
 	writeCommerceJSON(w, http.StatusOK, map[string]any{"customer": customer})
 }
 
@@ -272,7 +275,9 @@ func (api *commerceAPI) orders(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !api.method(w, r, http.MethodGet) && r.Method != http.MethodPost {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		writeCommerceError(w, http.StatusMethodNotAllowed, "method_not_allowed", "This HTTP method is not allowed for this endpoint.")
 		return
 	}
 	customer, _, ok := api.requireCustomer(w, r)

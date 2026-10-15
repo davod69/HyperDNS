@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"hyperdns/internal/api"
-	"hyperdns/internal/commerce"
 	"hyperdns/internal/auth"
 	"hyperdns/internal/core/cache"
 	"hyperdns/internal/core/matcher"
@@ -59,8 +58,6 @@ type WebServer struct {
 	subListenMu   sync.Mutex
 	stopServerCtx context.CancelFunc
 	api           *api.API
-	commerce      *commerce.Service
-	commerceLimiter *service.LoginAttemptTracker
 	loginLimiter  *service.LoginAttemptTracker
 	benchmark     *service.BenchmarkRunner
 	sseTickets    *sseTicketStore
@@ -180,7 +177,6 @@ func NewWebServer(
 		totpReplay:  newTOTPReplayGuard(),
 	}
 	ws.loginLimiter = service.NewLoginAttemptTracker()
-	ws.commerceLimiter = service.NewLoginAttemptTracker()
 	ws.benchmark = service.NewBenchmarkRunner(func() {
 		if ws.upstreams != nil {
 			ws.upstreams.BenchmarkAll()
@@ -328,7 +324,7 @@ func (ws *WebServer) BuildHandler() http.Handler {
 		// 2. Subscriber portal and 1-click registration, public by design. The
 		//    token in the path is the credential; these must stay reachable
 		//    without knowing anything about the admin namespace.
-		if strings.HasPrefix(p, "/api/v2/store/") || strings.HasPrefix(p, "/sub/") || strings.HasPrefix(p, "/ip/") || strings.HasPrefix(p, "/api/sub/") {
+		if strings.HasPrefix(p, "/sub/") || strings.HasPrefix(p, "/ip/") || strings.HasPrefix(p, "/api/sub/") {
 			inner.ServeHTTP(w, r)
 			return
 		}
@@ -462,8 +458,7 @@ func (ws *WebServer) subscriberSurface() http.Handler {
 	inner := ws.buildAdminMux()
 	return ws.withSecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := cleanRequestPath(r.URL.Path)
-		if strings.HasPrefix(p, "/api/v2/store/") ||
-			strings.HasPrefix(p, "/sub/") ||
+		if strings.HasPrefix(p, "/sub/") ||
 			strings.HasPrefix(p, "/ip/") ||
 			strings.HasPrefix(p, "/api/sub/") ||
 			p == "/css/portal.css" ||
@@ -619,9 +614,6 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 
 	// 1. Attach REST API v1
 	ws.api.RegisterRoutes(mux)
-
-	// Customer commerce API is public by design and authenticates its own sessions.
-	mux.Handle("/api/v2/store/", ws.commerceHandler())
 
 	// 2. DNS-over-HTTPS (DoH) endpoint
 	if ws.dohHandler != nil {
