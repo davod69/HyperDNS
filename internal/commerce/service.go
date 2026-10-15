@@ -85,7 +85,13 @@ func (s *Service) Login(email, password string) (database.CommerceCustomer, stri
 
 // Authenticate resolves a live session to an active customer profile.
 func (s *Service) Authenticate(token string) (database.CommerceCustomer, error) {
-	if token == "" || !s.sessions.Validate(token) {
+	if token == "" {
+		return database.CommerceCustomer{}, ErrSessionInvalid
+	}
+	if !s.sessions.Validate(token) {
+		s.mu.Lock()
+		delete(s.sessionUser, token)
+		s.mu.Unlock()
 		return database.CommerceCustomer{}, ErrSessionInvalid
 	}
 	s.mu.RLock()

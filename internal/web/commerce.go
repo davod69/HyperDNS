@@ -108,7 +108,7 @@ func (api *commerceAPI) method(w http.ResponseWriter, r *http.Request, method st
 	return true
 }
 
-func (api *commerceAPI) setSession(w http.ResponseWriter, token string) bool {
+func (api *commerceAPI) setSession(w http.ResponseWriter, r *http.Request, token string) bool {
 	csrfBytes := make([]byte, 32)
 	if _, err := rand.Read(csrfBytes); err != nil {
 		writeCommerceError(w, http.StatusInternalServerError, "internal_error", "The request could not be completed.")
@@ -117,7 +117,7 @@ func (api *commerceAPI) setSession(w http.ResponseWriter, token string) bool {
 	csrf := hex.EncodeToString(csrfBytes)
 	http.SetCookie(w, &http.Cookie{
 		Name: commerceSessionCookie, Value: token, Path: "/", HttpOnly: true,
-		Secure: api.secure, SameSite: http.SameSiteStrictMode, MaxAge: 24 * 60 * 60,
+		Secure: api.secure || r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: 24 * 60 * 60,
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name: commerceCSRFCookie, Value: csrf, Path: "/", HttpOnly: false,
@@ -222,7 +222,7 @@ func (api *commerceAPI) login(w http.ResponseWriter, r *http.Request) {
 	if api.limiter != nil {
 		api.limiter.RecordSuccess(ip)
 	}
-	if !api.setSession(w, token) {
+	if !api.setSession(w, r, token) {
 		api.service.Logout(token)
 		return
 	}

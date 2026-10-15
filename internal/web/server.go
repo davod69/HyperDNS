@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"hyperdns/internal/api"
-	"hyperdns/internal/commerce"
 	"hyperdns/internal/auth"
+	"hyperdns/internal/commerce"
 	"hyperdns/internal/core/cache"
 	"hyperdns/internal/core/matcher"
 	"hyperdns/internal/core/upstream"
@@ -58,10 +58,10 @@ type WebServer struct {
 	// port without a lock races the socket against itself.
 	subListenMu   sync.Mutex
 	stopServerCtx context.CancelFunc
-	api           *api.API
-	commerce      *commerce.Service
+	api             *api.API
+	commerce        *commerce.Service
 	commerceLimiter *service.LoginAttemptTracker
-	loginLimiter  *service.LoginAttemptTracker
+	loginLimiter    *service.LoginAttemptTracker
 	benchmark     *service.BenchmarkRunner
 	sseTickets    *sseTicketStore
 
