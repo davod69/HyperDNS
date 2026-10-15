@@ -50,6 +50,9 @@ import "embed"
 // old practice of handing the full dashboard shell to unauthenticated visitors.
 
 //go:embed index.html
+//go:embed store.html
+//go:embed css/store.css
+//go:embed js/store.js
 //go:embed login.html
 //go:embed css/tailwind.purged.css
 //go:embed css/style.css

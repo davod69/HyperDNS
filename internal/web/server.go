@@ -328,6 +328,11 @@ func (ws *WebServer) BuildHandler() http.Handler {
 		// 2. Subscriber portal and 1-click registration, public by design. The
 		//    token in the path is the credential; these must stay reachable
 		//    without knowing anything about the admin namespace.
+		if p == "/store" || p == "/store/" {
+			r.URL.Path = "/store.html"
+			ws.staticHandler().ServeHTTP(w, r)
+			return
+		}
 		if strings.HasPrefix(p, "/api/v2/store/") || strings.HasPrefix(p, "/sub/") || strings.HasPrefix(p, "/ip/") || strings.HasPrefix(p, "/api/sub/") {
 			inner.ServeHTTP(w, r)
 			return
@@ -345,7 +350,7 @@ func (ws *WebServer) BuildHandler() http.Handler {
 		//    subscriber's browser never needs the admin path; every dashboard
 		//    asset (/js/app.js, /css/style.css, the vendored libraries) is
 		//    reachable only below the admin prefix.
-		if p == "/css/portal.css" || p == "/js/portal.js" || strings.HasPrefix(p, "/fonts/") {
+		if p == "/css/portal.css" || p == "/js/portal.js" || p == "/css/store.css" || p == "/js/store.js" || strings.HasPrefix(p, "/fonts/") {
 			ws.staticHandler().ServeHTTP(w, r)
 			return
 		}
@@ -466,6 +471,8 @@ func (ws *WebServer) subscriberSurface() http.Handler {
 			strings.HasPrefix(p, "/sub/") ||
 			strings.HasPrefix(p, "/ip/") ||
 			strings.HasPrefix(p, "/api/sub/") ||
+			p == "/store" || p == "/store/" ||
+			p == "/css/store.css" || p == "/js/store.js" ||
 			p == "/css/portal.css" ||
 			p == "/js/portal.js" ||
 			strings.HasPrefix(p, "/fonts/") {
@@ -622,6 +629,7 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 
 	// Customer commerce API is public by design and authenticates its own sessions.
 	mux.Handle("/api/v2/store/", ws.commerceHandler())
+	mux.HandleFunc("/api/commerce/plans", ws.requireAuth(ws.handleCommercePlans))
 
 	// 2. DNS-over-HTTPS (DoH) endpoint
 	if ws.dohHandler != nil {

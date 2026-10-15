@@ -144,6 +144,15 @@ func (s *Service) GetOrder(customerID, orderID string) (database.CommerceOrder, 
 	return order, nil
 }
 
+
+func (s *Service) ListAllPlans() ([]database.CommercePlan, error) {
+	return s.repo.ListPlans(false)
+}
+
+func (s *Service) SavePlan(plan database.CommercePlan) (database.CommercePlan, error) {
+	return s.repo.SavePlan(plan)
+}
+
 func (s *Service) Close() {
 	if s != nil && s.sessions != nil {
 		s.sessions.Close()
