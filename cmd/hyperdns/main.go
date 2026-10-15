@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"hyperdns/internal/bootstrap"
+	"hyperdns/internal/commerce"
 	"hyperdns/internal/control"
 	"hyperdns/internal/core/cache"
 	"hyperdns/internal/core/dns"
@@ -539,6 +540,19 @@ func main() {
 	)
 	webServer.SetSubscriptionSettings(subscriptionSettings)
 	webServer.SetAuthSettings(authSettings)
+
+	// Commerce uses additive buckets in the existing encrypted database.
+	// No customer purchase creates a DNS client until payment is verified in a later phase.
+	commerceRepo, err := database.NewCommerceRepository(db)
+	if err != nil {
+		log.Fatalf("[Main] Failed to initialize commerce storage: %v", err)
+	}
+	commerceService, err := commerce.NewService(commerceRepo)
+	if err != nil {
+		log.Fatalf("[Main] Failed to initialize commerce service: %v", err)
+	}
+	defer commerceService.Close()
+	webServer.SetCommerceService(commerceService)
 
 	// v2.2.0: the embedded ACME client replaces certbot/acme.sh. It ships in
 	// the binary (an offline install can issue the moment it has internet,
