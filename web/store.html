@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>فروشگاه HyperDNS</title>
+  <link rel="stylesheet" href="/css/store.css">
+  <script src="/js/store.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <a class="brand" href="/store">HyperDNS <span>STORE</span></a>
+      <div class="actions"><button id="lang-toggle" class="quiet" type="button">English</button><button id="refresh" class="quiet" type="button" data-i18n="refresh">به‌روزرسانی</button></div>
+    </header>
+    <section class="hero">
+      <p class="eyebrow" data-i18n="eyebrow">اشتراک سرویس</p>
+      <h1 data-i18n="title">پلن مناسب خودت را انتخاب کن</h1>
+      <p class="muted" data-i18n="subtitle">پلن‌ها را ببین، حساب بساز و سفارش‌هایت را از یک جا مدیریت کن.</p>
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+    </section>
+    <section class="section">
+      <div class="section-head"><h2 data-i18n="plans">پلن‌ها</h2><span id="plan-count" class="muted"></span></div>
+      <div id="plans" class="plans"><p class="muted" data-i18n="loading">در حال دریافت اطلاعات…</p></div>
+    </section>
+    <section class="account-grid">
+      <article class="panel" id="auth-panel">
+        <div class="section-head"><h2 data-i18n="account">حساب مشتری</h2></div>
+        <div class="tabs"><button type="button" class="tab active" data-auth-tab="login" data-i18n="login">ورود</button><button type="button" class="tab" data-auth-tab="register" data-i18n="register">ثبت‌نام</button></div>
+        <form id="auth-form">
+          <label><span data-i18n="email">ایمیل</span><input name="email" type="email" autocomplete="email" maxlength="254" required></label>
+          <label id="name-field" hidden><span data-i18n="displayName">نام نمایشی</span><input name="display_name" autocomplete="name" maxlength="120"></label>
+          <label><span data-i18n="password">رمز عبور</span><input name="password" type="password" autocomplete="current-password" minlength="10" maxlength="256" required></label>
+          <button class="primary full" type="submit" data-i18n="continue">ادامه</button>
+        </form>
+        <p class="small muted" data-i18n="passwordHint">رمز عبور باید دست‌کم ۱۰ نویسه داشته باشد.</p>
+      </article>
+      <article class="panel" id="account-panel" hidden>
+        <div class="section-head"><h2 data-i18n="myAccount">حساب من</h2><button id="logout" class="quiet" type="button" data-i18n="logout">خروج</button></div>
+        <p id="customer-name" class="customer-name"></p><p id="customer-email" class="muted"></p>
+        <div class="section-head orders-head"><h3 data-i18n="myOrders">سفارش‌های من</h3><button id="orders-refresh" class="quiet" type="button" data-i18n="refresh">به‌روزرسانی</button></div>
+        <div id="orders"><p class="muted" data-i18n="loginToOrders">برای دیدن سفارش‌ها وارد حساب شوید.</p></div>
+      </article>
+    </section>
+    <footer><span>HyperDNS</span><span data-i18n="footer">پرداخت تا زمان اتصال درگاه، فعال‌سازی خودکار ندارد.</span></footer>
+  </main>
+</body>
+</html>

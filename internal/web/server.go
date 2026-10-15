@@ -21,6 +21,7 @@ import (
 
 	"hyperdns/internal/api"
 	"hyperdns/internal/auth"
+	"hyperdns/internal/commerce"
 	"hyperdns/internal/core/cache"
 	"hyperdns/internal/core/matcher"
 	"hyperdns/internal/core/upstream"
@@ -57,10 +58,12 @@ type WebServer struct {
 	// port without a lock races the socket against itself.
 	subListenMu   sync.Mutex
 	stopServerCtx context.CancelFunc
-	api           *api.API
-	loginLimiter  *service.LoginAttemptTracker
-	benchmark     *service.BenchmarkRunner
-	sseTickets    *sseTicketStore
+	api             *api.API
+	commerce        *commerce.Service
+	commerceLimiter *service.LoginAttemptTracker
+	loginLimiter    *service.LoginAttemptTracker
+	benchmark       *service.BenchmarkRunner
+	sseTickets      *sseTicketStore
 
 	// ldapAuth is the directory client used when the auth record points at
 	// LDAP. It is an interface so tests can inject a fake without a network.
@@ -177,6 +180,7 @@ func NewWebServer(
 		totpReplay:  newTOTPReplayGuard(),
 	}
 	ws.loginLimiter = service.NewLoginAttemptTracker()
+	ws.commerceLimiter = service.NewLoginAttemptTracker()
 	ws.benchmark = service.NewBenchmarkRunner(func() {
 		if ws.upstreams != nil {
 			ws.upstreams.BenchmarkAll()
@@ -324,7 +328,12 @@ func (ws *WebServer) BuildHandler() http.Handler {
 		// 2. Subscriber portal and 1-click registration, public by design. The
 		//    token in the path is the credential; these must stay reachable
 		//    without knowing anything about the admin namespace.
-		if strings.HasPrefix(p, "/sub/") || strings.HasPrefix(p, "/ip/") || strings.HasPrefix(p, "/api/sub/") {
+		if p == "/store" || p == "/store/" {
+			r.URL.Path = "/store.html"
+			ws.staticHandler().ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(p, "/api/v2/store/") || strings.HasPrefix(p, "/sub/") || strings.HasPrefix(p, "/ip/") || strings.HasPrefix(p, "/api/sub/") {
 			inner.ServeHTTP(w, r)
 			return
 		}
@@ -341,7 +350,7 @@ func (ws *WebServer) BuildHandler() http.Handler {
 		//    subscriber's browser never needs the admin path; every dashboard
 		//    asset (/js/app.js, /css/style.css, the vendored libraries) is
 		//    reachable only below the admin prefix.
-		if p == "/css/portal.css" || p == "/js/portal.js" || strings.HasPrefix(p, "/fonts/") {
+		if p == "/css/portal.css" || p == "/js/portal.js" || p == "/css/store.css" || p == "/js/store.js" || strings.HasPrefix(p, "/fonts/") {
 			ws.staticHandler().ServeHTTP(w, r)
 			return
 		}
@@ -458,9 +467,17 @@ func (ws *WebServer) subscriberSurface() http.Handler {
 	inner := ws.buildAdminMux()
 	return ws.withSecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := cleanRequestPath(r.URL.Path)
-		if strings.HasPrefix(p, "/sub/") ||
+		if p == "/store" || p == "/store/" {
+			r.URL.Path = "/store.html"
+			ws.staticHandler().ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(p, "/api/v2/store/") ||
+			strings.HasPrefix(p, "/sub/") ||
 			strings.HasPrefix(p, "/ip/") ||
 			strings.HasPrefix(p, "/api/sub/") ||
+			p == "/store" || p == "/store/" ||
+			p == "/css/store.css" || p == "/js/store.js" ||
 			p == "/css/portal.css" ||
 			p == "/js/portal.js" ||
 			strings.HasPrefix(p, "/fonts/") {
@@ -614,6 +631,10 @@ func (ws *WebServer) buildAdminMux() *http.ServeMux {
 
 	// 1. Attach REST API v1
 	ws.api.RegisterRoutes(mux)
+
+	// Customer commerce API is public by design and authenticates its own sessions.
+	mux.Handle("/api/v2/store/", ws.commerceHandler())
+	mux.HandleFunc("/api/commerce/plans", ws.requireAuth(ws.handleCommercePlans))
 
 	// 2. DNS-over-HTTPS (DoH) endpoint
 	if ws.dohHandler != nil {

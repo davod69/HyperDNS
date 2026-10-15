@@ -449,3 +449,10 @@ All methods, with copy buttons: **[izumirain.github.io](https://izumirain.github
 
 ## 📜 License
 HyperDNS is distributed under the **AGPL-3.0 License**.
+
+
+## Customer Storefront and Commerce Foundation
+
+The subscription storefront is served at `/store` with Persian and English UI. It supports customer accounts, plan browsing, pending orders, and order history. Operators manage plan definitions through the authenticated `/<admin-path>/api/commerce/plans` endpoint. See [Commerce setup and payment boundaries](docs/COMMERCE.md) before exposing the store publicly.
+
+**Payment provider setup is still required for real checkout and automatic provisioning.** Orders remain pending until a provider-backed verification flow is configured; the storefront does not treat a client request as proof of payment.
