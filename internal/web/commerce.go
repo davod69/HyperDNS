@@ -121,16 +121,16 @@ func (api *commerceAPI) setSession(w http.ResponseWriter, r *http.Request, token
 	})
 	http.SetCookie(w, &http.Cookie{
 		Name: commerceCSRFCookie, Value: csrf, Path: "/", HttpOnly: false,
-		Secure: api.secure, SameSite: http.SameSiteStrictMode, MaxAge: 24 * 60 * 60,
+		Secure: api.secure || r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: 24 * 60 * 60,
 	})
 	return true
 }
 
-func (api *commerceAPI) clearSession(w http.ResponseWriter) {
+func (api *commerceAPI) clearSession(w http.ResponseWriter, r *http.Request) {
 	for _, name := range []string{commerceSessionCookie, commerceCSRFCookie} {
 		http.SetCookie(w, &http.Cookie{
 			Name: name, Value: "", Path: "/", HttpOnly: name == commerceSessionCookie,
-			Secure: api.secure, SameSite: http.SameSiteStrictMode, MaxAge: -1,
+			Secure: api.secure || r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1,
 		})
 	}
 }
@@ -156,7 +156,7 @@ func (api *commerceAPI) requireCustomer(w http.ResponseWriter, r *http.Request) 
 	}
 	customer, err := api.service.Authenticate(cookie.Value)
 	if err != nil {
-		api.clearSession(w)
+		api.clearSession(w, r)
 		writeCommerceError(w, http.StatusUnauthorized, "unauthenticated", "Authentication is required.")
 		return database.CommerceCustomer{}, "", false
 	}
