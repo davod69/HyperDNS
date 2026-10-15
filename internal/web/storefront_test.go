@@ -15,7 +15,7 @@ func TestPublicStorefrontAndAssets(t *testing.T) {
 	for _, tc := range []struct {
 		path, contentType, marker string
 	}{
-		{"/store", "text/html; charset=utf-8", "Choose a plan that fits"},
+		{"/store", "text/html; charset=utf-8", `data-i18n="title"`},
 		{"/css/store.css", "text/css; charset=utf-8", "--accent"},
 		{"/js/store.js", "text/javascript; charset=utf-8", "/api/v2/store/auth/login"},
 	} {
