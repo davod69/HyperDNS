@@ -467,6 +467,11 @@ func (ws *WebServer) subscriberSurface() http.Handler {
 	inner := ws.buildAdminMux()
 	return ws.withSecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := cleanRequestPath(r.URL.Path)
+		if p == "/store" || p == "/store/" {
+			r.URL.Path = "/store.html"
+			ws.staticHandler().ServeHTTP(w, r)
+			return
+		}
 		if strings.HasPrefix(p, "/api/v2/store/") ||
 			strings.HasPrefix(p, "/sub/") ||
 			strings.HasPrefix(p, "/ip/") ||
